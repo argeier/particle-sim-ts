@@ -39,7 +39,7 @@ class ParticleSystem2D {
         // Initialize parameters
         this.params = {
             color: '#88ccff',
-            particleCount: 400,
+            particleCount: 50,
             wanderStrength: 0.02,
             attractionStrength: 0.1,
             repulsionStrength: 0.15,
