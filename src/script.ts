@@ -26,8 +26,6 @@ class ParticleSystem2D {
     private camera: THREE.OrthographicCamera;
     private renderer: THREE.WebGLRenderer;
     private composer: EffectComposer;
-    private raycaster: THREE.Raycaster;
-    private mousePos: THREE.Vector2;
     private attractionPoint: THREE.Vector3;
     private particles: ParticleData[];
     private isLeftMouseDown: boolean;
@@ -41,12 +39,12 @@ class ParticleSystem2D {
         // Initialize parameters
         this.params = {
             color: '#88ccff',
-            particleCount: 100,
+            particleCount: 400,
             wanderStrength: 0.02,
             attractionStrength: 0.1,
             repulsionStrength: 0.15,
             maxSpeed: 0.05,
-            particleSize: 0.1
+            particleSize: 0.05
         };
 
         // Use orthographic camera for 2D view
@@ -84,8 +82,6 @@ class ParticleSystem2D {
         this.composer.addPass(bloomPass);
 
         // Mouse interaction setup
-        this.raycaster = new THREE.Raycaster();
-        this.mousePos = new THREE.Vector2();
         this.isLeftMouseDown = false;
         this.isRightMouseDown = false;
         this.attractionPoint = new THREE.Vector3();
