@@ -35,19 +35,20 @@ class ParticleSystem2D {
     private isRightMouseDown = false;
     private params: SystemParams = {
         color: '#88ccff',
-        particleCount: 1000,
+        particleCount: 3000,
         attractionStrength: 0.1,
         repulsionStrength: 0.15,
         maxSpeed: 8,
         particleSize: 8,
         gravity: 0.2,
         friction: 0.98,
-        stopThreshold: 0.05
+        stopThreshold: 0.05,
     };
     private windowWidth: number = window.innerWidth;
     private windowHeight: number = window.innerHeight;
 
     constructor() {
+        // Create scene and camera.
         this.scene = new THREE.Scene();
         this.camera = new THREE.OrthographicCamera(
             -this.windowWidth / 2,
@@ -59,26 +60,25 @@ class ParticleSystem2D {
         );
         this.camera.position.z = 10;
 
+        // Create renderer.
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         this.renderer.setSize(this.windowWidth, this.windowHeight);
         this.renderer.setClearColor(0x000000, 1);
         document.body.appendChild(this.renderer.domElement);
 
+        // Setup postprocessing.
         this.composer = new EffectComposer(this.renderer);
         this.composer.addPass(new RenderPass(this.scene, this.camera));
         this.composer.addPass(
-            new UnrealBloomPass(
-                new THREE.Vector2(this.windowWidth, this.windowHeight),
-                1.5,
-                0.4,
-                0.1
-            )
+            new UnrealBloomPass(new THREE.Vector2(this.windowWidth, this.windowHeight), 1.5, 0.4, 0.1)
         );
 
+        // Create particles, border, GUI and events.
         this.particles = this.createParticles();
         this.createBorder();
         this.initGUI();
         this.addEventListeners();
+
         this.animate();
     }
 
@@ -88,13 +88,13 @@ class ParticleSystem2D {
         const baseColor = new THREE.Color(this.params.color);
 
         for (let i = 0; i < this.params.particleCount; i++) {
-            // Place particles randomly within the border.
+            // Random initial positions within the border.
             const x = (Math.random() - 0.5) * this.windowWidth;
             const y = (Math.random() - 0.5) * this.windowHeight;
             const material = new THREE.MeshBasicMaterial({
                 color: baseColor.clone(),
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.8,
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(x, y, 0);
@@ -104,17 +104,14 @@ class ParticleSystem2D {
             particles.push({
                 mesh,
                 position: new THREE.Vector2(x, y),
-                velocity: new THREE.Vector2(
-                    (Math.random() - 0.5) * 4,
-                    (Math.random() - 0.5) * 4
-                ),
-                baseColor: baseColor.clone()
+                velocity: new THREE.Vector2((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4),
+                baseColor: baseColor.clone(),
             });
         }
         return particles;
     }
 
-    // Create a visible rectangular border.
+    // Create a visible border.
     private createBorder(): void {
         if (this.border) {
             this.scene.remove(this.border);
@@ -127,21 +124,24 @@ class ParticleSystem2D {
         this.scene.add(this.border);
     }
 
+    // Update particle physics, including forces, gravity, friction, and collisions.
     private updateParticles(): void {
         const radius = this.params.particleSize;
         const halfWidth = this.windowWidth / 2;
         const halfHeight = this.windowHeight / 2;
 
-        // Update each particle.
+        // 1. Update forces, gravity, borders, and friction for each particle.
         this.particles.forEach(p => {
-            // Apply mouse-based attraction or repulsion.
+            // Mouse-based attraction or repulsion.
             if (this.isLeftMouseDown || this.isRightMouseDown) {
                 const mousePos = new THREE.Vector2(this.attractionPoint.x, this.attractionPoint.y);
                 const distance = mousePos.distanceTo(p.position);
                 const interactionRadius = Math.min(this.windowWidth, this.windowHeight);
                 if (distance < interactionRadius) {
                     const direction = mousePos.clone().sub(p.position).normalize();
-                    const force = this.isLeftMouseDown ? this.params.attractionStrength : -this.params.repulsionStrength;
+                    const force = this.isLeftMouseDown
+                        ? this.params.attractionStrength
+                        : -this.params.repulsionStrength;
                     p.velocity.addScaledVector(direction, force * 100);
                     if (p.mesh.material instanceof THREE.MeshBasicMaterial) {
                         const opacityChange =
@@ -169,7 +169,7 @@ class ParticleSystem2D {
             // Update position.
             p.position.add(p.velocity);
 
-            // Handle collision with the rectangular border.
+            // Handle border collisions.
             if (p.position.x < -halfWidth + radius) {
                 p.position.x = -halfWidth + radius;
                 p.velocity.x *= -0.9;
@@ -187,38 +187,78 @@ class ParticleSystem2D {
                 p.velocity.y *= -0.9;
             }
 
-            // Apply friction so particles eventually slow down.
+            // Apply friction.
             p.velocity.multiplyScalar(this.params.friction);
             if (p.velocity.length() < this.params.stopThreshold) {
                 p.velocity.set(0, 0);
             }
         });
 
-        // (Optional) Collision handling among particles.
-        for (let i = 0; i < this.particles.length; i++) {
-            for (let j = i + 1; j < this.particles.length; j++) {
-                const p1 = this.particles[i];
-                const p2 = this.particles[j];
-                const diff = p1.position.clone().sub(p2.position);
-                const distance = diff.length();
-                const minDist = radius * 2;
-                if (distance > 0 && distance < minDist) {
-                    const overlap = minDist - distance;
-                    const normal = diff.clone().normalize();
-                    p1.position.add(normal.clone().multiplyScalar(overlap / 2));
-                    p2.position.sub(normal.clone().multiplyScalar(overlap / 2));
-                    const relativeVelocity = p1.velocity.clone().sub(p2.velocity);
-                    const velAlongNormal = relativeVelocity.dot(normal);
-                    if (velAlongNormal < 0) {
-                        const impulse = -velAlongNormal;
-                        p1.velocity.add(normal.clone().multiplyScalar(impulse));
-                        p2.velocity.sub(normal.clone().multiplyScalar(impulse));
+        // 2. Build a uniform spatial grid.
+        const cellSize = radius * 2; // roughly the particle diameter
+        const grid = new Map<string, ParticleData[]>();
+
+        this.particles.forEach(p => {
+            // Shift coordinate origin from (-halfWidth, -halfHeight) to (0, 0) for grid indexing.
+            const cellX = Math.floor((p.position.x + halfWidth) / cellSize);
+            const cellY = Math.floor((p.position.y + halfHeight) / cellSize);
+            const key = `${cellX},${cellY}`;
+            if (!grid.has(key)) grid.set(key, []);
+            grid.get(key)!.push(p);
+        });
+
+        // Helper function for collision resolution.
+        const resolveCollision = (p1: ParticleData, p2: ParticleData) => {
+            const diff = p1.position.clone().sub(p2.position);
+            const distance = diff.length();
+            const minDist = radius * 2;
+            if (distance > 0 && distance < minDist) {
+                const overlap = minDist - distance;
+                const normal = diff.clone().normalize();
+                // Adjust positions
+                p1.position.add(normal.clone().multiplyScalar(overlap / 2));
+                p2.position.sub(normal.clone().multiplyScalar(overlap / 2));
+                // Adjust velocities along the collision normal.
+                const relativeVelocity = p1.velocity.clone().sub(p2.velocity);
+                const velAlongNormal = relativeVelocity.dot(normal);
+                if (velAlongNormal < 0) {
+                    const impulse = -velAlongNormal;
+                    p1.velocity.add(normal.clone().multiplyScalar(impulse));
+                    p2.velocity.sub(normal.clone().multiplyScalar(impulse));
+                }
+            }
+        };
+
+        // 3. Check collisions within each grid cell and with neighboring cells.
+        for (const [key, cellParticles] of grid.entries()) {
+            const [cellX, cellY] = key.split(',').map(Number);
+
+            // Check collisions among particles within the same cell.
+            for (let i = 0; i < cellParticles.length; i++) {
+                for (let j = i + 1; j < cellParticles.length; j++) {
+                    resolveCollision(cellParticles[i], cellParticles[j]);
+                }
+            }
+
+            // Check collisions with neighbors.
+            // We only check one direction to avoid duplicate checks.
+            for (let dx = 0; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy <= 0) continue; // already processed
+                    const neighborKey = `${cellX + dx},${cellY + dy}`;
+                    if (grid.has(neighborKey)) {
+                        const neighborParticles = grid.get(neighborKey)!;
+                        for (const p1 of cellParticles) {
+                            for (const p2 of neighborParticles) {
+                                resolveCollision(p1, p2);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Update each mesh position.
+        // 4. Update mesh positions.
         this.particles.forEach(p => {
             p.mesh.position.set(p.position.x, p.position.y, 0);
         });
@@ -245,7 +285,9 @@ class ParticleSystem2D {
 
     private initGUI(): void {
         const gui = new GUI();
-        gui.addColor(this.params, 'color').name('Particle Color').onChange(() => this.updateParticleColors());
+        gui.addColor(this.params, 'color')
+            .name('Particle Color')
+            .onChange(() => this.updateParticleColors());
         gui.add(this.params, 'attractionStrength', 0, 0.5).name('Attraction Strength');
         gui.add(this.params, 'repulsionStrength', 0, 0.5).name('Repulsion Strength');
         gui.add(this.params, 'maxSpeed', 0, 20).name('Max Speed');
